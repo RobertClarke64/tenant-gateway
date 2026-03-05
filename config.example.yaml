@@ -1,0 +1,23 @@
+server:
+  listen: ":8080"
+
+upstream:
+  url: "http://localhost:3100"
+  timeout: 30s
+
+database:
+  url: "postgres://user:password@localhost:5432/tenant_gateway?sslmode=disable"
+
+auth:
+  token_hash_cost: 10
+
+endpoints:
+  read:
+    - "GET /**"
+  write:
+    - "POST /loki/api/v1/push"
+    - "POST /api/v1/push"
+    - "POST /otlp/**"
+    - "POST /prom/push"
+    - "PUT /**"
+    - "DELETE /**"

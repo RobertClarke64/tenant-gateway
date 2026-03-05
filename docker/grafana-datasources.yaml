@@ -1,0 +1,28 @@
+apiVersion: 1
+
+datasources:
+  # This datasource connects to Loki through the tenant-gateway
+  # You need to update the httpHeaderValue1 with a valid API key after setup
+  # Run: docker compose exec gateway tenant-gateway -config /etc/gateway/config.yaml -bootstrap admin
+  # Then use the admin API to create tenants, users, and API keys
+  - name: Loki (via Gateway)
+    type: loki
+    access: proxy
+    url: http://gateway:8080
+    jsonData:
+      httpHeaderName1: "Authorization"
+      httpHeaderName2: "X-Scope-OrgID"
+    secureJsonData:
+      # Replace with your API key: "Bearer <your-api-key>"
+      httpHeaderValue1: "Bearer REPLACE_WITH_API_KEY"
+    editable: true
+
+  # Direct access to Loki (bypassing gateway) for comparison/debugging
+  - name: Loki (Direct)
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      httpHeaderName1: "X-Scope-OrgID"
+      httpHeaderValue1: "test-tenant"
+    editable: true
