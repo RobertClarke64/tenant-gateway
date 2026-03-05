@@ -1,0 +1,495 @@
+openapi: 3.0.3
+info:
+  title: Tenant Gateway Admin API
+  description: |
+    Admin API for managing users, tenants, API keys, and ephemeral tokens
+    in the multi-tenant authenticating reverse proxy.
+  version: 1.0.0
+
+servers:
+  - url: /admin
+    description: Admin API endpoints
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: API key for an admin user
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        is_admin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateUserRequest:
+      type: object
+      required:
+        - username
+      properties:
+        username:
+          type: string
+          example: "reader-user"
+        is_admin:
+          type: boolean
+          default: false
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: The X-Scope-OrgID value
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTenantRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: "my-tenant"
+
+    TenantAccess:
+      type: object
+      properties:
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+        can_read:
+          type: boolean
+        can_write:
+          type: boolean
+
+    GrantTenantAccessRequest:
+      type: object
+      required:
+        - tenant_id
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        can_read:
+          type: boolean
+          default: false
+        can_write:
+          type: boolean
+          default: false
+
+    UpdateTenantAccessRequest:
+      type: object
+      properties:
+        can_read:
+          type: boolean
+        can_write:
+          type: boolean
+
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        key_prefix:
+          type: string
+          description: First 8 characters of the key for identification
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked:
+          type: boolean
+
+    CreateAPIKeyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "grafana-key"
+        expires_in:
+          type: string
+          description: Duration string (e.g., "24h", "720h")
+          example: "720h"
+
+    CreateAPIKeyResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIKey'
+        - type: object
+          properties:
+            key:
+              type: string
+              description: The plaintext API key (only shown once)
+
+    EphemeralToken:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        token_prefix:
+          type: string
+        can_read:
+          type: boolean
+        can_write:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        created_by_user_id:
+          type: string
+          format: uuid
+
+    CreateEphemeralTokenRequest:
+      type: object
+      required:
+        - tenant_id
+        - expires_in
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        can_read:
+          type: boolean
+          default: false
+        can_write:
+          type: boolean
+          default: false
+        expires_in:
+          type: string
+          description: Duration string (e.g., "1h", "24h")
+          example: "1h"
+
+    CreateEphemeralTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/EphemeralToken'
+        - type: object
+          properties:
+            token:
+              type: string
+              description: The plaintext token (only shown once)
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /users:
+    get:
+      summary: List all users
+      tags: [Users]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '403':
+          description: Forbidden - requires admin access
+
+    post:
+      summary: Create a new user
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid request
+        '403':
+          description: Forbidden - requires admin access
+
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a user by ID
+      tags: [Users]
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: User not found
+
+    delete:
+      summary: Delete a user
+      tags: [Users]
+      responses:
+        '204':
+          description: User deleted
+        '404':
+          description: User not found
+
+  /users/{id}/api-keys:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: List API keys for a user
+      tags: [API Keys]
+      responses:
+        '200':
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/APIKey'
+
+    post:
+      summary: Create an API key for a user
+      tags: [API Keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAPIKeyRequest'
+      responses:
+        '201':
+          description: API key created (key shown only once)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateAPIKeyResponse'
+        '404':
+          description: User not found
+
+  /users/{id}/api-keys/{keyId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: keyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    delete:
+      summary: Revoke an API key
+      tags: [API Keys]
+      responses:
+        '204':
+          description: API key revoked
+        '404':
+          description: API key not found
+
+  /users/{id}/tenants:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: List tenant access for a user
+      tags: [User-Tenant Access]
+      responses:
+        '200':
+          description: List of tenant access
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TenantAccess'
+
+    post:
+      summary: Grant tenant access to a user
+      tags: [User-Tenant Access]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantTenantAccessRequest'
+      responses:
+        '201':
+          description: Access granted
+
+  /users/{id}/tenants/{tenantId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    put:
+      summary: Update tenant access permissions
+      tags: [User-Tenant Access]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantAccessRequest'
+      responses:
+        '200':
+          description: Access updated
+
+    delete:
+      summary: Revoke tenant access
+      tags: [User-Tenant Access]
+      responses:
+        '204':
+          description: Access revoked
+        '404':
+          description: Access not found
+
+  /tenants:
+    get:
+      summary: List all tenants
+      tags: [Tenants]
+      responses:
+        '200':
+          description: List of tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+
+    post:
+      summary: Create a new tenant
+      tags: [Tenants]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          description: Invalid request
+
+  /tenants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    delete:
+      summary: Delete a tenant
+      tags: [Tenants]
+      responses:
+        '204':
+          description: Tenant deleted
+        '404':
+          description: Tenant not found
+
+  /ephemeral-tokens:
+    post:
+      summary: Create an ephemeral token
+      description: |
+        Creates a short-lived token for a specific tenant.
+        Useful for browser frontends that need temporary write access.
+      tags: [Ephemeral Tokens]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEphemeralTokenRequest'
+      responses:
+        '201':
+          description: Token created (shown only once)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEphemeralTokenResponse'
+        '400':
+          description: Invalid request
+        '404':
+          description: Tenant not found

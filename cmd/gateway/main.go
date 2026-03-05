@@ -87,6 +87,11 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
+	// Swagger UI (unauthenticated)
+	r.Get("/swagger", http.RedirectHandler("/swagger/", http.StatusMovedPermanently).ServeHTTP)
+	r.Get("/swagger/", admin.SwaggerUI())
+	r.Get("/swagger/openapi.yaml", admin.OpenAPISpec())
+
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(authenticator.Middleware)
@@ -108,6 +113,7 @@ func main() {
 	go func() {
 		log.Printf("Starting server on %s", cfg.Server.Listen)
 		log.Printf("Proxying to %s", cfg.Upstream.URL)
+		log.Printf("Swagger UI available at %s/swagger/", cfg.Server.Listen)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
