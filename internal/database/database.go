@@ -2,12 +2,18 @@ package database
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
 type DB struct {
 	pool *pgxpool.Pool
@@ -30,66 +36,6 @@ func (db *DB) Close() {
 	db.pool.Close()
 }
 
-// migrations contains all database migrations keyed by version
-var migrations = map[string]string{
-	"001_initial": `
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    username VARCHAR(255) NOT NULL UNIQUE,
-    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE tenants (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL UNIQUE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE user_tenants (
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    can_read BOOLEAN NOT NULL DEFAULT FALSE,
-    can_write BOOLEAN NOT NULL DEFAULT FALSE,
-    PRIMARY KEY (user_id, tenant_id)
-);
-
-CREATE TABLE api_keys (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    key_hash VARCHAR(255) NOT NULL,
-    key_prefix VARCHAR(8) NOT NULL,
-    name VARCHAR(255) NOT NULL DEFAULT '',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMP WITH TIME ZONE,
-    revoked BOOLEAN NOT NULL DEFAULT FALSE
-);
-
-CREATE INDEX idx_api_keys_user_id ON api_keys(user_id);
-CREATE INDEX idx_api_keys_key_prefix ON api_keys(key_prefix);
-
-CREATE TABLE ephemeral_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    token_hash VARCHAR(255) NOT NULL,
-    token_prefix VARCHAR(8) NOT NULL,
-    can_read BOOLEAN NOT NULL DEFAULT FALSE,
-    can_write BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_ephemeral_tokens_tenant_id ON ephemeral_tokens(tenant_id);
-CREATE INDEX idx_ephemeral_tokens_token_prefix ON ephemeral_tokens(token_prefix);
-CREATE INDEX idx_ephemeral_tokens_expires_at ON ephemeral_tokens(expires_at);
-`,
-}
-
 func (db *DB) Migrate(ctx context.Context) error {
 	// Create migrations table if not exists
 	_, err := db.pool.Exec(ctx, `
@@ -100,6 +46,12 @@ func (db *DB) Migrate(ctx context.Context) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("creating migrations table: %w", err)
+	}
+
+	// Read migration files from embedded filesystem
+	migrations, err := loadMigrations()
+	if err != nil {
+		return fmt.Errorf("loading migrations: %w", err)
 	}
 
 	// Sort migrations by version
@@ -145,4 +97,32 @@ func (db *DB) Migrate(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func loadMigrations() (map[string]string, error) {
+	migrations := make(map[string]string)
+
+	err := fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() || filepath.Ext(path) != ".sql" {
+			return nil
+		}
+
+		content, err := migrationsFS.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+
+		// Use filename without extension as version
+		filename := filepath.Base(path)
+		version := strings.TrimSuffix(filename, ".sql")
+		migrations[version] = string(content)
+
+		return nil
+	})
+
+	return migrations, err
 }

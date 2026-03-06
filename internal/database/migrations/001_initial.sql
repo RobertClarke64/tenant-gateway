@@ -1,4 +1,3 @@
--- +migrate Up
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE users (
@@ -53,10 +52,3 @@ CREATE TABLE ephemeral_tokens (
 CREATE INDEX idx_ephemeral_tokens_tenant_id ON ephemeral_tokens(tenant_id);
 CREATE INDEX idx_ephemeral_tokens_token_prefix ON ephemeral_tokens(token_prefix);
 CREATE INDEX idx_ephemeral_tokens_expires_at ON ephemeral_tokens(expires_at);
-
--- +migrate Down
-DROP TABLE IF EXISTS ephemeral_tokens;
-DROP TABLE IF EXISTS api_keys;
-DROP TABLE IF EXISTS user_tenants;
-DROP TABLE IF EXISTS tenants;
-DROP TABLE IF EXISTS users;
