@@ -1,6 +1,6 @@
 # Tenant Gateway
 
-A multi-tenant reverse proxy for Grafana Loki (and similar multi-tenant services) that provides authentication, authorization, and tenant isolation.
+A multi-tenant reverse proxy for Grafana Loki, Mimir and Tempo (and similar multi-tenant services) that provides authentication, authorization, and tenant isolation.
 
 ## Features
 
